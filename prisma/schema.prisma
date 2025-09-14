@@ -1,0 +1,18 @@
+// prisma/schema.prisma
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model UserSession {
+  id              String    @id @default(uuid())
+  githubToken     String    @unique @db.Text
+  githubUser      Json
+  wordpressSite   String
+  expiresAt       DateTime
+  createdAt       DateTime  @default(now())
+}
