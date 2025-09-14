@@ -1,7 +1,7 @@
 // src/routes/authRoutes.ts
 import { Router } from 'express';
 import { PrismaClient } from '@prisma/client';
-import type { Request, Response, NextFunction } from 'express';
+import type { Request, Response } from 'express';
 import crypto from 'crypto';
 
 export default (prisma: PrismaClient) => {
@@ -21,9 +21,8 @@ export default (prisma: PrismaClient) => {
       return res.status(400).send('wordpress_site query parameter is required and must be a string.');
     }
     const state = crypto.randomBytes(16).toString('hex');
-    const redirectUri = `https://github.com/login/oauth/authorize?client_id=${GITHUB_CLIENT_ID}&redirect_uri=${process.env.REDIRECT_URI}&state=${state}&scope=repo,read:user,read:org&allow_signup=false`;
+    const redirectUri = `https://github.com/login/oauth/authorize?client_id=${GITHUB_CLIENT_ID}&redirect_uri=${process.env.REDIRECT_URI}&state=${state}&scope=repo,admin:org,read:user&allow_signup=false`;
     
-    // Almacena la URL de WordPress y el estado en cookies
     res.cookie('state', state, { httpOnly: true, maxAge: 3600000 });
     res.cookie('wordpress_site', wordpress_site, { httpOnly: true, maxAge: 3600000 });
     
@@ -35,13 +34,11 @@ export default (prisma: PrismaClient) => {
     const { code, state } = req.query;
     const { wordpress_site, state: stateCookie } = req.cookies;
     
-    // Validar el estado para prevenir CSRF y asegurar que hay datos de sesión
     if (!state || !code || !stateCookie || state !== stateCookie || !wordpress_site) {
       return res.status(401).send('Invalid or missing state parameter or session data.');
     }
 
     try {
-      // Intercambiar el código por un token de acceso
       const response = await fetch('https://github.com/login/oauth/access_token', {
         method: 'POST',
         headers: {
@@ -55,7 +52,6 @@ export default (prisma: PrismaClient) => {
         })
       });
       
-      // Manejar respuestas no exitosas de la API de GitHub
       if (!response.ok) {
         const errorData = await response.json();
         console.error('GitHub API error:', errorData);
@@ -69,23 +65,20 @@ export default (prisma: PrismaClient) => {
         throw new Error('Failed to get GitHub access token.');
       }
       
-      // Obtener la información del usuario de GitHub
       const userResponse = await fetch('https://api.github.com/user', {
         headers: { Authorization: `Bearer ${githubToken}` }
       });
       const githubUser = await userResponse.json();
 
-      // Almacenar la sesión en la base de datos
       const session = await prisma.userSession.create({
         data: {
           githubToken,
           githubUser,
           wordpressSite: wordpress_site,
-          expiresAt: new Date(Date.now() + 3600000) // Expira en 1 hora
+          expiresAt: new Date(Date.now() + 3600000)
         }
       });
 
-      // Construir la URL de redirección dinámicamente
       let redirectUrl = wordpress_site;
       if (redirectUrl.includes('?')) {
         redirectUrl += `&session_token=${session.id}`;
@@ -93,11 +86,9 @@ export default (prisma: PrismaClient) => {
         redirectUrl += `?session_token=${session.id}`;
       }
       
-      // Limpiar las cookies de sesión
       res.clearCookie('state');
       res.clearCookie('wordpress_site');
 
-      // Redirigir de vuelta a WordPress con el token de sesión
       res.redirect(redirectUrl);
 
     } catch (error) {

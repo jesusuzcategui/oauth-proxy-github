@@ -14,7 +14,9 @@ declare global {
 const prisma = new PrismaClient();
 
 const sessionValidation = async (req: Request, res: Response, next: NextFunction) => {
-  const sessionToken = req.headers['authorization']?.split(' ')[1] || req.query.session_token;
+  // El token puede venir en el header Authorization o en el body/query
+  const sessionToken = req.headers['authorization']?.split(' ')[1] || req.body.session_token || req.query.session_token;
+
   if (!sessionToken) {
     return res.status(401).send('Unauthorized: No session token provided.');
   }
@@ -28,7 +30,7 @@ const sessionValidation = async (req: Request, res: Response, next: NextFunction
       return res.status(401).send('Unauthorized: Invalid or expired session token.');
     }
     
-    // Expande la sesión si es válida
+    // Adjuntar la sesión a la petición
     req.user = session;
     next();
   } catch (error) {

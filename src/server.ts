@@ -4,6 +4,8 @@ import cors from 'cors';
 import { PrismaClient } from '@prisma/client';
 import dotenv from 'dotenv';
 import cookieParser from 'cookie-parser';
+
+// Importaciones locales con la extensión .js para ESM
 import authRoutes from './routes/authRoutes.js';
 import apiRoutes from './routes/apiRoutes.js';
 import sessionValidation from './middleware/sessionValidation.js';
@@ -24,6 +26,7 @@ app.use(cookieParser());
 
 // Endpoints principales
 app.use('/auth', authRoutes(prisma));
+// Aplicar el middleware de validación a todas las rutas bajo /api
 app.use('/api', sessionValidation, apiRoutes(prisma));
 
 // Middleware para manejar errores
