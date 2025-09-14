@@ -1,6 +1,7 @@
 // src/routes/authRoutes.ts
 import { Router } from 'express';
 import { PrismaClient } from '@prisma/client';
+import type { Request, Response, NextFunction } from 'express';
 import crypto from 'crypto';
 
 export default (prisma: PrismaClient) => {
@@ -14,36 +15,33 @@ export default (prisma: PrismaClient) => {
   }
 
   // GET /auth/github: Iniciar el flujo de autenticación
-  router.get('/github', (req, res) => {
+  router.get('/github', (req: Request, res: Response) => {
     const { wordpress_site } = req.query;
-    if (!wordpress_site) {
-      return res.status(400).send('wordpress_site query parameter is required.');
+    if (!wordpress_site || typeof wordpress_site !== 'string') {
+      return res.status(400).send('wordpress_site query parameter is required and must be a string.');
     }
     const state = crypto.randomBytes(16).toString('hex');
     const redirectUri = `https://github.com/login/oauth/authorize?client_id=${GITHUB_CLIENT_ID}&redirect_uri=${process.env.REDIRECT_URI}&state=${state}&scope=repo,read:user,read:org&allow_signup=false`;
+    
+    // Almacena la URL de WordPress y el estado en cookies
     res.cookie('state', state, { httpOnly: true, maxAge: 3600000 });
     res.cookie('wordpress_site', wordpress_site, { httpOnly: true, maxAge: 3600000 });
+    
     res.redirect(redirectUri);
   });
 
   // GET /auth/github/callback: Manejar el callback de GitHub
-  router.get('/github/callback', async (req, res) => {
+  router.get('/github/callback', async (req: Request, res: Response) => {
     const { code, state } = req.query;
-
-    // Ensure the required query parameters exist
-    if (!code || !state) {
-      return res.status(400).send('Missing "code" or "state" query parameters.');
-    }
-
     const { wordpress_site, state: stateCookie } = req.cookies;
-
-    // Validate state to prevent CSRF and ensure the wordpress_site cookie exists
-    if (!stateCookie || state !== stateCookie || !wordpress_site) {
+    
+    // Validar el estado para prevenir CSRF y asegurar que hay datos de sesión
+    if (!state || !code || !stateCookie || state !== stateCookie || !wordpress_site) {
       return res.status(401).send('Invalid or missing state parameter or session data.');
     }
 
     try {
-      // Exchange the code for an access token
+      // Intercambiar el código por un token de acceso
       const response = await fetch('https://github.com/login/oauth/access_token', {
         method: 'POST',
         headers: {
@@ -56,47 +54,50 @@ export default (prisma: PrismaClient) => {
           code
         })
       });
-
-      // Handle non-2xx HTTP responses
+      
+      // Manejar respuestas no exitosas de la API de GitHub
       if (!response.ok) {
         const errorData = await response.json();
         console.error('GitHub API error:', errorData);
-        // Provide a clearer error to the user
         return res.status(401).send('Authentication failed with GitHub API.');
       }
-
+    
       const data = await response.json();
-      console.log('GitHub response data:', data);
-
       const githubToken = data.access_token;
-
+      
       if (!githubToken) {
         throw new Error('Failed to get GitHub access token.');
       }
-
-      // Get the authenticated user's info
+      
+      // Obtener la información del usuario de GitHub
       const userResponse = await fetch('https://api.github.com/user', {
         headers: { Authorization: `Bearer ${githubToken}` }
       });
       const githubUser = await userResponse.json();
 
-      // Store the session in the database
+      // Almacenar la sesión en la base de datos
       const session = await prisma.userSession.create({
         data: {
           githubToken,
           githubUser,
           wordpressSite: wordpress_site,
-          expiresAt: new Date(Date.now() + 3600000) // Expires in 1 hour
+          expiresAt: new Date(Date.now() + 3600000) // Expira en 1 hora
         }
       });
 
+      // Construir la URL de redirección dinámicamente
       let redirectUrl = wordpress_site;
-      // Verificar si la URL ya tiene parámetros de consulta
       if (redirectUrl.includes('?')) {
         redirectUrl += `&session_token=${session.id}`;
       } else {
         redirectUrl += `?session_token=${session.id}`;
       }
+      
+      // Limpiar las cookies de sesión
+      res.clearCookie('state');
+      res.clearCookie('wordpress_site');
+
+      // Redirigir de vuelta a WordPress con el token de sesión
       res.redirect(redirectUrl);
 
     } catch (error) {
