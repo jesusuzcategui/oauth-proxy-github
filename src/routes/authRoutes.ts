@@ -50,33 +50,22 @@ export default (prisma: PrismaClient) => {
           code
         })
       });
+      
+      // Imprime la respuesta para ver si hay un error
+      if (!response.ok) {
+        const errorData = await response.json();
+        console.error('GitHub API error:', errorData);
+        return res.status(500).send('GitHub API failed to authenticate.');
+      }
+    
       const data = await response.json();
       const githubToken = data.access_token;
       
       if (!githubToken) {
         throw new Error('Failed to get GitHub access token.');
       }
-
-      // Obtener la información del usuario de GitHub
-      const userResponse = await fetch('https://api.github.com/user', {
-        headers: { Authorization: `Bearer ${githubToken}` }
-      });
-      const githubUser = await userResponse.json();
-
-      // Almacenar la sesión en la base de datos
-      const session = await prisma.userSession.create({
-        data: {
-          githubToken,
-          githubUser,
-          wordpressSite: wordpress_site,
-          expiresAt: new Date(Date.now() + 3600000) // Expira en 1 hora
-        }
-      });
-
-      // Redirigir de vuelta al plugin de WordPress con un token de sesión
-      const redirectUrl = `${wordpress_site}?session_token=${session.id}`;
-      res.redirect(redirectUrl);
-
+      
+      // ... (resto del código)
     } catch (error) {
       console.error(error);
       res.status(500).send('Authentication failed.');
