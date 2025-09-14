@@ -1,7 +1,7 @@
 // src/middleware/sessionValidation.ts
-import { Request, Response, NextFunction } from 'express';
+import type { Request, Response, NextFunction } from 'express';
 import { PrismaClient } from '@prisma/client';
-import type { UserSession } from '@prisma/client'; // <-- La palabra clave 'type' lo soluciona
+import type { UserSession } from '@prisma/client';
 
 declare global {
   namespace Express {
