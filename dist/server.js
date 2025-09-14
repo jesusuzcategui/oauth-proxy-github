@@ -3,6 +3,7 @@ import express from 'express';
 import cors from 'cors';
 import { PrismaClient } from '@prisma/client';
 import dotenv from 'dotenv';
+import cookieParser from 'cookie-parser';
 import authRoutes from './routes/authRoutes.js';
 import apiRoutes from './routes/apiRoutes.js';
 import sessionValidation from './middleware/sessionValidation.js';
@@ -11,8 +12,12 @@ const app = express();
 const prisma = new PrismaClient();
 const port = process.env.PORT || 3000;
 // Middleware de seguridad y CORS
-app.use(cors());
+app.use(cors({
+    credentials: true,
+    origin: true
+}));
 app.use(express.json());
+app.use(cookieParser());
 // Endpoints principales
 app.use('/auth', authRoutes(prisma));
 app.use('/api', sessionValidation, apiRoutes(prisma));
