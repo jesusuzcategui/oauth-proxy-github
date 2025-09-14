@@ -90,8 +90,13 @@ export default (prisma: PrismaClient) => {
         }
       });
 
-      // Redirect back to WordPress with the session token
-      const redirectUrl = `${wordpress_site}?session_token=${session.id}`;
+      let redirectUrl = wordpress_site;
+      // Verificar si la URL ya tiene parámetros de consulta
+      if (redirectUrl.includes('?')) {
+        redirectUrl += `&session_token=${session.id}`;
+      } else {
+        redirectUrl += `?session_token=${session.id}`;
+      }
       res.redirect(redirectUrl);
 
     } catch (error) {
