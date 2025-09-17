@@ -2,83 +2,69 @@
 import { Router } from 'express';
 import { PrismaClient } from '@prisma/client';
 import type { Request, Response } from 'express';
-import crypto from 'crypto';
+import { App } from 'octokit';
 
 export default (prisma: PrismaClient) => {
   const router = Router();
-  const GITHUB_CLIENT_ID = process.env.GITHUB_CLIENT_ID;
-  const GITHUB_CLIENT_SECRET = process.env.GITHUB_CLIENT_SECRET;
-  const JWT_SECRET = process.env.JWT_SECRET;
+  const GITHUB_APP_ID = process.env.GITHUB_APP_ID;
+  const GITHUB_APP_PRIVATE_KEY = process.env.GITHUB_APP_PRIVATE_KEY;
 
-  if (!GITHUB_CLIENT_ID || !GITHUB_CLIENT_SECRET || !JWT_SECRET) {
-    throw new Error('Environment variables GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET, and JWT_SECRET are required.');
+  if (!GITHUB_APP_ID || !GITHUB_APP_PRIVATE_KEY) {
+    throw new Error('Environment variables GITHUB_APP_ID and GITHUB_APP_PRIVATE_KEY are required.');
   }
 
-  // GET /auth/github: Iniciar el flujo de autenticación
-  router.get('/github', (req: Request, res: Response) => {
+  const appId = parseInt(GITHUB_APP_ID, 10);
+  
+  const app = new App({
+    appId: appId,
+    privateKey: GITHUB_APP_PRIVATE_KEY,
+  });
+
+  // Endpoint de inicio para la instalación de la aplicación
+  router.get('/github/install', (req: Request, res: Response) => {
     const { wordpress_site } = req.query;
     if (!wordpress_site || typeof wordpress_site !== 'string') {
       return res.status(400).send('wordpress_site query parameter is required and must be a string.');
     }
-    const state = crypto.randomBytes(16).toString('hex');
-    const redirectUri = `https://github.com/login/oauth/authorize?client_id=${GITHUB_CLIENT_ID}&redirect_uri=${process.env.REDIRECT_URI}&state=${state}&scope=repo,admin:org,read:user&allow_signup=false`;
     
-    res.cookie('state', state, { httpOnly: true, maxAge: 3600000 });
-    res.cookie('wordpress_site', wordpress_site, { httpOnly: true, maxAge: 3600000 });
+    // La URL de redirección que coincida con la configuración en GitHub
+    const redirectUri = `${req.protocol}://${req.get('host')}/auth/github/callback`;
     
-    res.redirect(redirectUri);
+    // Usar `redirect_uri` y `state` correctamente
+    const installationUrl = `https://github.com/apps/wordpress-theme-versions/installations/new?state=${wordpress_site}&redirect_uri=${redirectUri}`;
+    res.redirect(installationUrl);
   });
 
-  // GET /auth/github/callback: Manejar el callback de GitHub
+  // Callback de instalación
   router.get('/github/callback', async (req: Request, res: Response) => {
-    const { code, state } = req.query;
-    const { wordpress_site, state: stateCookie } = req.cookies;
-    
-    if (!state || !code || !stateCookie || state !== stateCookie || !wordpress_site) {
-      return res.status(401).send('Invalid or missing state parameter or session data.');
+    const { installation_id, state } = req.query;
+    const wordpress_site = state as string;
+
+    if (!installation_id || !wordpress_site) {
+      return res.status(400).send('Missing installation_id or state parameter.');
     }
 
     try {
-      const response = await fetch('https://github.com/login/oauth/access_token', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json'
-        },
-        body: JSON.stringify({
-          client_id: GITHUB_CLIENT_ID,
-          client_secret: GITHUB_CLIENT_SECRET,
-          code
-        })
-      });
+      const installationIdInt = parseInt(installation_id as string, 10);
       
-      if (!response.ok) {
-        const errorData = await response.json();
-        console.error('GitHub API error:', errorData);
-        return res.status(401).send('Authentication failed with GitHub API.');
-      }
-    
-      const data = await response.json();
-      const githubToken = data.access_token;
+      // Obtener un token de instalación
+      const installationOctokit = await app.getInstallationOctokit(installationIdInt);
       
-      if (!githubToken) {
-        throw new Error('Failed to get GitHub access token.');
-      }
+      // La solicitud GET /user fallará con un token de instalación
+      // No necesitamos la información del usuario en este punto porque la URL de callback ya contiene lo que necesitamos
       
-      const userResponse = await fetch('https://api.github.com/user', {
-        headers: { Authorization: `Bearer ${githubToken}` }
-      });
-      const githubUser = await userResponse.json();
-
+      // Crear una sesión del usuario
       const session = await prisma.userSession.create({
         data: {
-          githubToken,
-          githubUser,
+          installationId: installationIdInt,
+          githubUser: { // Puedes dejar esto vacío por ahora o rellenarlo con un objeto simple.
+            // La información del usuario se obtendrá en la validación
+          },
           wordpressSite: wordpress_site,
           expiresAt: new Date(Date.now() + 3600000)
         }
       });
-
+      
       let redirectUrl = wordpress_site;
       if (redirectUrl.includes('?')) {
         redirectUrl += `&session_token=${session.id}`;
@@ -86,9 +72,6 @@ export default (prisma: PrismaClient) => {
         redirectUrl += `?session_token=${session.id}`;
       }
       
-      res.clearCookie('state');
-      res.clearCookie('wordpress_site');
-
       res.redirect(redirectUrl);
 
     } catch (error) {

@@ -2,11 +2,20 @@
 import type { Request, Response, NextFunction } from 'express';
 import { PrismaClient } from '@prisma/client';
 import type { UserSession } from '@prisma/client';
+import { App } from 'octokit';
+
+// Asegurar que GITHUB_APP_ID sea un número para la inicialización
+const GITHUB_APP_ID_INT = parseInt(process.env.GITHUB_APP_ID as string, 10);
+
+const app = new App({
+  appId: GITHUB_APP_ID_INT,
+  privateKey: process.env.GITHUB_APP_PRIVATE_KEY as string,
+});
 
 declare global {
   namespace Express {
     interface Request {
-      user?: UserSession;
+      user?: UserSession & { githubToken: string };
     }
   }
 }
@@ -14,7 +23,6 @@ declare global {
 const prisma = new PrismaClient();
 
 const sessionValidation = async (req: Request, res: Response, next: NextFunction) => {
-  // El token puede venir en el header Authorization o en el body/query
   const sessionToken = req.headers['authorization']?.split(' ')[1] || req.body.session_token || req.query.session_token;
 
   if (!sessionToken) {
@@ -29,10 +37,18 @@ const sessionValidation = async (req: Request, res: Response, next: NextFunction
     if (!session || session.expiresAt < new Date()) {
       return res.status(401).send('Unauthorized: Invalid or expired session token.');
     }
+
+    // Usar la propiedad 'installationId' que ya es un número en la sesión
+    const installationOctokit = await app.getInstallationOctokit(session.installationId);
     
-    // Adjuntar la sesión a la petición
-    req.user = session;
+    const { token } = await installationOctokit.auth({ type: 'installation' }) as any;
+    
+    req.user = {
+      ...session,
+      githubToken: token
+    };
     next();
+
   } catch (error) {
     console.error(error);
     res.status(500).send('Internal server error during session validation.');

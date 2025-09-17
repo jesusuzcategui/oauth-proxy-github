@@ -10,7 +10,7 @@ generator client {
 
 model UserSession {
   id              String    @id @default(uuid())
-  githubToken     String    @unique @db.Text
+  installationId  Int       @unique
   githubUser      Json
   wordpressSite   String
   expiresAt       DateTime

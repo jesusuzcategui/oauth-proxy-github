@@ -1,7 +1,7 @@
 -- CreateTable
-CREATE TABLE "public"."UserSession" (
+CREATE TABLE "UserSession" (
     "id" TEXT NOT NULL,
-    "githubToken" TEXT NOT NULL,
+    "installationId" INTEGER NOT NULL,
     "githubUser" JSONB NOT NULL,
     "wordpressSite" TEXT NOT NULL,
     "expiresAt" TIMESTAMP(3) NOT NULL,
@@ -11,4 +11,4 @@ CREATE TABLE "public"."UserSession" (
 );
 
 -- CreateIndex
-CREATE UNIQUE INDEX "UserSession_githubToken_key" ON "public"."UserSession"("githubToken");
+CREATE UNIQUE INDEX "UserSession_installationId_key" ON "UserSession"("installationId");

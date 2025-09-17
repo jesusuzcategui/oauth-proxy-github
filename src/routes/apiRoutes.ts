@@ -4,14 +4,6 @@ import { PrismaClient } from '@prisma/client';
 import type { Request, Response } from 'express';
 import type { UserSession } from '@prisma/client';
 
-declare global {
-  namespace Express {
-    interface Request {
-      user?: UserSession;
-    }
-  }
-}
-
 export default (prisma: PrismaClient) => {
   const router = Router();
 
@@ -59,8 +51,14 @@ export default (prisma: PrismaClient) => {
     }
   });
 
-  // GET /api/github/user
-  router.get('/github/user', (req: Request, res: Response) => githubApiProxy(req, res, 'user'));
+  // GET /api/github/user: obtiene la información del usuario de la sesión, no de la API de GitHub.
+  router.get('/api/github/user', (req: Request, res: Response) => {
+    const user = req.user?.githubUser;
+    if (!user) {
+      return res.status(404).send('User not found in session.');
+    }
+    res.json(user);
+  });
 
   // GET /api/github/orgs
   router.get('/github/orgs', (req: Request, res: Response) => githubApiProxy(req, res, 'user/orgs'));
