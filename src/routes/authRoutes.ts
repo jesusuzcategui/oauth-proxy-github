@@ -3,6 +3,7 @@ import { Router } from 'express';
 import { PrismaClient } from '@prisma/client';
 import type { Request, Response } from 'express';
 import { App } from 'octokit';
+import { Octokit } from '@octokit/rest';
 
 export default (prisma: PrismaClient) => {
   const router = Router();
@@ -27,10 +28,7 @@ export default (prisma: PrismaClient) => {
       return res.status(400).send('wordpress_site query parameter is required and must be a string.');
     }
     
-    // La URL de redirección que coincida con la configuración en GitHub
     const redirectUri = `${req.protocol}://${req.get('host')}/auth/github/callback`;
-    
-    // Usar `redirect_uri` y `state` correctamente
     const installationUrl = `https://github.com/apps/wordpress-theme-versions/installations/new?state=${wordpress_site}&redirect_uri=${redirectUri}`;
     res.redirect(installationUrl);
   });
@@ -47,19 +45,15 @@ export default (prisma: PrismaClient) => {
     try {
       const installationIdInt = parseInt(installation_id as string, 10);
       
-      // Obtener un token de instalación
       const installationOctokit = await app.getInstallationOctokit(installationIdInt);
       
-      // La solicitud GET /user fallará con un token de instalación
-      // No necesitamos la información del usuario en este punto porque la URL de callback ya contiene lo que necesitamos
-      
-      // Crear una sesión del usuario
+      // Obtener la información del usuario de GitHub
+      const { data: userData } = await installationOctokit.rest.users.getAuthenticated();
+
       const session = await prisma.userSession.create({
         data: {
           installationId: installationIdInt,
-          githubUser: { // Puedes dejar esto vacío por ahora o rellenarlo con un objeto simple.
-            // La información del usuario se obtendrá en la validación
-          },
+          githubUser: userData,
           wordpressSite: wordpress_site,
           expiresAt: new Date(Date.now() + 3600000)
         }
