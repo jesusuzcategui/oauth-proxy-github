@@ -36,8 +36,8 @@ export default (prisma: PrismaClient) => {
       return res.status(400).send('wordpress_site query parameter is required and must be a string.');
     }
     
-    // Obtener el protocolo dinámicamente
-    const protocol = req.protocol === 'http' ? 'http' : 'https';
+    // Forzar el protocolo a ser HTTPS
+    const protocol = 'https';
     const redirectUri = `${protocol}://${req.get('host')}/auth/github/callback`;
 
     const installationUrl = `https://github.com/apps/wordpress-theme-versions/installations/new?state=${wordpress_site}&redirect_uri=${redirectUri}`;
@@ -56,8 +56,8 @@ export default (prisma: PrismaClient) => {
     try {
       const installationIdInt = parseInt(installation_id as string, 10);
 
-      // Obtener el protocolo dinámicamente
-      const protocol = req.protocol === 'http' ? 'http' : 'https';
+      // Forzar el protocolo a ser HTTPS para el intercambio de token
+      const protocol = 'https';
       const redirectUri = `${protocol}://${req.get('host')}/auth/github/callback`;
       
       const { authentication } = await oauthApp.createToken({
