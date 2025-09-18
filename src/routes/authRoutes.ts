@@ -18,7 +18,7 @@ export default (prisma: PrismaClient) => {
   }
 
   const appId = parseInt(GITHUB_APP_ID, 10);
-  
+
   const app = new App({
     appId: appId,
     privateKey: GITHUB_APP_PRIVATE_KEY,
@@ -30,15 +30,17 @@ export default (prisma: PrismaClient) => {
     if (!wordpress_site || typeof wordpress_site !== 'string') {
       return res.status(400).send('wordpress_site query parameter is required and must be a string.');
     }
-    
+
     const installationUrl = `https://github.com/apps/wordpress-theme-versions/installations/new?state=${wordpress_site}&redirect_uri=${REDIRECT_URI}`;
     res.redirect(installationUrl);
   });
 
-  // GET /auth/github/callback - ✅ Usando fetch directamente
+  // GET /auth/github/callback - ✅ Código completo con debugging
   router.get('/github/callback', async (req: Request, res: Response) => {
     const { installation_id, state, code } = req.query;
     const wordpress_site = state as string;
+
+    console.log('Callback received:', { installation_id, state, code }); // 🔍 Debug
 
     if (!installation_id || !wordpress_site || !code) {
       return res.status(400).send('Missing installation_id, state, or code parameter.');
@@ -46,8 +48,14 @@ export default (prisma: PrismaClient) => {
 
     try {
       const installationIdInt = parseInt(installation_id as string, 10);
-      
-      // ✅ Intercambiar código por token usando fetch
+
+      // 🔍 Log antes de hacer la petición
+      console.log('Making OAuth request with:', {
+        client_id: GITHUB_CLIENT_ID,
+        redirect_uri: REDIRECT_URI,
+        code_length: (code as string).length
+      });
+
       const tokenResponse = await fetch('https://github.com/login/oauth/access_token', {
         method: 'POST',
         headers: {
@@ -63,36 +71,51 @@ export default (prisma: PrismaClient) => {
       });
 
       const tokenData = await tokenResponse.json();
-      
+
+      // 🔍 Log la respuesta completa
+      console.log('GitHub OAuth Response:', tokenData);
+
       if (tokenData.error) {
         console.error('GitHub OAuth Error:', tokenData);
-        return res.status(400).json({ 
-          error: tokenData.error, 
-          description: tokenData.error_description 
+        return res.status(400).json({
+          error: tokenData.error,
+          description: tokenData.error_description,
+          debug: {
+            client_id: GITHUB_CLIENT_ID,
+            redirect_uri: REDIRECT_URI,
+            received_code: !!code
+          }
         });
       }
 
+      // ✅ Resto del código - continúa aquí
       const userToken = tokenData.access_token;
 
+      // Obtener información del usuario con el token
       const userOctokit = new Octokit({ auth: userToken });
       const { data: userData } = await userOctokit.rest.users.getAuthenticated();
-      
+
+      // Crear sesión en la base de datos
       const session = await prisma.userSession.create({
         data: {
           installationId: installationIdInt,
           githubUser: userData,
           wordpressSite: wordpress_site,
-          expiresAt: new Date(Date.now() + 3600000)
+          expiresAt: new Date(Date.now() + 3600000) // Expira en 1 hora
         }
       });
-      
+
+      // Construir URL de redirección con el token de sesión
       let redirectUrl = wordpress_site;
       if (redirectUrl.includes('?')) {
         redirectUrl += `&session_token=${session.id}`;
       } else {
         redirectUrl += `?session_token=${session.id}`;
       }
-      
+
+      console.log('Redirecting to:', redirectUrl); // 🔍 Debug
+
+      // Redirigir al usuario de vuelta a WordPress
       res.redirect(redirectUrl);
 
     } catch (error) {
