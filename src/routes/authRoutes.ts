@@ -3,7 +3,6 @@ import { Router } from 'express';
 import { PrismaClient } from '@prisma/client';
 import type { Request, Response } from 'express';
 import { App } from 'octokit';
-import { OAuthApp } from '@octokit/oauth-app';
 import { Octokit } from '@octokit/rest';
 
 export default (prisma: PrismaClient) => {
@@ -12,9 +11,6 @@ export default (prisma: PrismaClient) => {
   const GITHUB_APP_PRIVATE_KEY = process.env.GITHUB_APP_PRIVATE_KEY;
   const GITHUB_CLIENT_ID = process.env.GITHUB_CLIENT_ID;
   const GITHUB_CLIENT_SECRET = process.env.GITHUB_CLIENT_SECRET;
-  
-  // Asegúrate de que esta variable de entorno exista y esté configurada
-  // en ambos entornos (local y Render)
   const REDIRECT_URI = process.env.REDIRECT_URI;
 
   if (!GITHUB_APP_ID || !GITHUB_APP_PRIVATE_KEY || !GITHUB_CLIENT_ID || !GITHUB_CLIENT_SECRET || !REDIRECT_URI) {
@@ -28,24 +24,18 @@ export default (prisma: PrismaClient) => {
     privateKey: GITHUB_APP_PRIVATE_KEY,
   });
 
-  const oauthApp = new OAuthApp({
-    clientId: GITHUB_CLIENT_ID,
-    clientSecret: GITHUB_CLIENT_SECRET,
-  });
-
-  // Endpoint de inicio para la instalación de la aplicación
+  // GET /auth/github/install
   router.get('/github/install', (req: Request, res: Response) => {
     const { wordpress_site } = req.query;
     if (!wordpress_site || typeof wordpress_site !== 'string') {
       return res.status(400).send('wordpress_site query parameter is required and must be a string.');
     }
     
-    // Usa la variable de entorno para la URL de redirección
     const installationUrl = `https://github.com/apps/wordpress-theme-versions/installations/new?state=${wordpress_site}&redirect_uri=${REDIRECT_URI}`;
     res.redirect(installationUrl);
   });
 
-  // Callback de instalación
+  // GET /auth/github/callback - ✅ Usando fetch directamente
   router.get('/github/callback', async (req: Request, res: Response) => {
     const { installation_id, state, code } = req.query;
     const wordpress_site = state as string;
@@ -57,13 +47,32 @@ export default (prisma: PrismaClient) => {
     try {
       const installationIdInt = parseInt(installation_id as string, 10);
       
-      const { authentication } = await oauthApp.createToken({
-        code: code as string,
-        // Usa la variable de entorno aquí también
-        redirectUrl: REDIRECT_URI,
+      // ✅ Intercambiar código por token usando fetch
+      const tokenResponse = await fetch('https://github.com/login/oauth/access_token', {
+        method: 'POST',
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: new URLSearchParams({
+          client_id: GITHUB_CLIENT_ID,
+          client_secret: GITHUB_CLIENT_SECRET,
+          code: code as string,
+          redirect_uri: REDIRECT_URI,
+        }),
       });
+
+      const tokenData = await tokenResponse.json();
       
-      const userToken = authentication.token;
+      if (tokenData.error) {
+        console.error('GitHub OAuth Error:', tokenData);
+        return res.status(400).json({ 
+          error: tokenData.error, 
+          description: tokenData.error_description 
+        });
+      }
+
+      const userToken = tokenData.access_token;
 
       const userOctokit = new Octokit({ auth: userToken });
       const { data: userData } = await userOctokit.rest.users.getAuthenticated();
@@ -87,7 +96,7 @@ export default (prisma: PrismaClient) => {
       res.redirect(redirectUrl);
 
     } catch (error) {
-      console.error(error);
+      console.error('OAuth Error:', error);
       res.status(500).send('Authentication failed due to a server error.');
     }
   });
