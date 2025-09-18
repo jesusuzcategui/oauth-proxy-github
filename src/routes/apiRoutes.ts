@@ -52,7 +52,7 @@ export default (prisma: PrismaClient) => {
   });
 
   // GET /api/github/user: obtiene la información del usuario de la sesión, no de la API de GitHub.
-  router.get('/api/github/user', (req: Request, res: Response) => {
+  router.get('/github/user', (req: Request, res: Response) => {
     const user = req.user?.githubUser;
     if (!user) {
       return res.status(404).send('User not found in session.');
