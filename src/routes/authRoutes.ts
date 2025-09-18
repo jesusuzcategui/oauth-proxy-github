@@ -19,13 +19,11 @@ export default (prisma: PrismaClient) => {
 
   const appId = parseInt(GITHUB_APP_ID, 10);
   
-  // Instancia para manejar la autenticación de la aplicación de GitHub
   const app = new App({
     appId: appId,
     privateKey: GITHUB_APP_PRIVATE_KEY,
   });
 
-  // Instancia para manejar el flujo de autenticación OAuth de usuario
   const oauthApp = new OAuthApp({
     clientId: GITHUB_CLIENT_ID,
     clientSecret: GITHUB_CLIENT_SECRET,
@@ -38,7 +36,10 @@ export default (prisma: PrismaClient) => {
       return res.status(400).send('wordpress_site query parameter is required and must be a string.');
     }
     
-    const redirectUri = `${req.protocol}://${req.get('host')}/auth/github/callback`;
+    // Obtener el protocolo dinámicamente
+    const protocol = req.protocol === 'http' ? 'http' : 'https';
+    const redirectUri = `${protocol}://${req.get('host')}/auth/github/callback`;
+
     const installationUrl = `https://github.com/apps/wordpress-theme-versions/installations/new?state=${wordpress_site}&redirect_uri=${redirectUri}`;
     res.redirect(installationUrl);
   });
@@ -54,16 +55,18 @@ export default (prisma: PrismaClient) => {
 
     try {
       const installationIdInt = parseInt(installation_id as string, 10);
+
+      // Obtener el protocolo dinámicamente
+      const protocol = req.protocol === 'http' ? 'http' : 'https';
+      const redirectUri = `${protocol}://${req.get('host')}/auth/github/callback`;
       
-      // Usa la instancia de oauthApp para obtener el token de usuario
-      const response = await oauthApp.createToken({
+      const { authentication } = await oauthApp.createToken({
         code: code as string,
-        redirectUrl: `${req.protocol}://${req.get('host')}/auth/github/callback`,
+        redirectUrl: redirectUri,
       });
       
-      const userToken = response.authentication.token;
+      const userToken = authentication.token;
 
-      // Usa el token de usuario para obtener los datos de la cuenta de GitHub
       const userOctokit = new Octokit({ auth: userToken });
       const { data: userData } = await userOctokit.rest.users.getAuthenticated();
       
