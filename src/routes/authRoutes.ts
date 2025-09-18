@@ -12,13 +12,15 @@ export default (prisma: PrismaClient) => {
   const GITHUB_APP_PRIVATE_KEY = process.env.GITHUB_APP_PRIVATE_KEY;
   const GITHUB_CLIENT_ID = process.env.GITHUB_CLIENT_ID;
   const GITHUB_CLIENT_SECRET = process.env.GITHUB_CLIENT_SECRET;
+  // Nueva variable de entorno
+  const REDIRECT_URI = process.env.REDIRECT_URI; 
 
-  if (!GITHUB_APP_ID || !GITHUB_APP_PRIVATE_KEY || !GITHUB_CLIENT_ID || !GITHUB_CLIENT_SECRET) {
-    throw new Error('Environment variables GITHUB_APP_ID, GITHUB_APP_PRIVATE_KEY, GITHUB_CLIENT_ID, and GITHUB_CLIENT_SECRET are required.');
+  if (!GITHUB_APP_ID || !GITHUB_APP_PRIVATE_KEY || !GITHUB_CLIENT_ID || !GITHUB_CLIENT_SECRET || !REDIRECT_URI) {
+    throw new Error('All required environment variables must be set.');
   }
 
   const appId = parseInt(GITHUB_APP_ID, 10);
-  
+
   const app = new App({
     appId: appId,
     privateKey: GITHUB_APP_PRIVATE_KEY,
@@ -35,12 +37,9 @@ export default (prisma: PrismaClient) => {
     if (!wordpress_site || typeof wordpress_site !== 'string') {
       return res.status(400).send('wordpress_site query parameter is required and must be a string.');
     }
-    
-    // Forzar el protocolo a ser HTTPS
-    const protocol = 'https';
-    const redirectUri = `${protocol}://${req.get('host')}/auth/github/callback`;
 
-    const installationUrl = `https://github.com/apps/wordpress-theme-versions/installations/new?state=${wordpress_site}&redirect_uri=${redirectUri}`;
+    // Ahora usa la variable de entorno para la URL de redirección
+    const installationUrl = `https://github.com/apps/wordpress-theme-versions/installations/new?state=${wordpress_site}&redirect_uri=${REDIRECT_URI}`;
     res.redirect(installationUrl);
   });
 
@@ -56,20 +55,16 @@ export default (prisma: PrismaClient) => {
     try {
       const installationIdInt = parseInt(installation_id as string, 10);
 
-      // Forzar el protocolo a ser HTTPS para el intercambio de token
-      const protocol = 'https';
-      const redirectUri = `${protocol}://${req.get('host')}/auth/github/callback`;
-      
       const { authentication } = await oauthApp.createToken({
         code: code as string,
-        redirectUrl: redirectUri,
+        redirectUrl: REDIRECT_URI, // Usa la variable de entorno aquí también
       });
-      
+
       const userToken = authentication.token;
 
       const userOctokit = new Octokit({ auth: userToken });
       const { data: userData } = await userOctokit.rest.users.getAuthenticated();
-      
+
       const session = await prisma.userSession.create({
         data: {
           installationId: installationIdInt,
@@ -78,14 +73,14 @@ export default (prisma: PrismaClient) => {
           expiresAt: new Date(Date.now() + 3600000)
         }
       });
-      
+
       let redirectUrl = wordpress_site;
       if (redirectUrl.includes('?')) {
         redirectUrl += `&session_token=${session.id}`;
       } else {
         redirectUrl += `?session_token=${session.id}`;
       }
-      
+
       res.redirect(redirectUrl);
 
     } catch (error) {
