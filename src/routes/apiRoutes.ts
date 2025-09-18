@@ -7,7 +7,6 @@ import type { UserSession } from '@prisma/client';
 export default (prisma: PrismaClient) => {
   const router = Router();
 
-  // Middleware de validación ya aplicado en server.ts
   const githubApiProxy = async (req: Request, res: Response, apiPath: string) => {
     try {
       const githubToken = req.user?.githubToken;
@@ -51,7 +50,7 @@ export default (prisma: PrismaClient) => {
     }
   });
 
-  // GET /api/github/user: obtiene la información del usuario de la sesión, no de la API de GitHub.
+  // GET /api/github/user - Use the stored user info
   router.get('/github/user', (req: Request, res: Response) => {
     const user = req.user?.githubUser;
     if (!user) {
@@ -59,17 +58,11 @@ export default (prisma: PrismaClient) => {
     }
     res.json(user);
   });
-
-  // GET /api/github/orgs
+  
+  // The rest of the routes use the `githubApiProxy` which works correctly with the installation token
   router.get('/github/orgs', (req: Request, res: Response) => githubApiProxy(req, res, 'user/orgs'));
-
-  // GET /api/github/repos/:owner
   router.get('/github/repos/:owner', (req: Request, res: Response) => githubApiProxy(req, res, `users/${req.params.owner}/repos`));
-
-  // GET /api/github/branches/:owner/:repo
   router.get('/github/branches/:owner/:repo', (req: Request, res: Response) => githubApiProxy(req, res, `repos/${req.params.owner}/${req.params.repo}/branches`));
-
-  // POST /api/github/detect-type/:owner/:repo
   router.post('/github/detect-type/:owner/:repo', async (req: Request, res: Response) => {
     try {
       const { owner, repo } = req.params;

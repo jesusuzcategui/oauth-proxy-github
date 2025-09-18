@@ -3,7 +3,6 @@ import { Router } from 'express';
 import { PrismaClient } from '@prisma/client';
 import type { Request, Response } from 'express';
 import { App } from 'octokit';
-import { Octokit } from '@octokit/rest';
 
 export default (prisma: PrismaClient) => {
   const router = Router();
@@ -45,15 +44,10 @@ export default (prisma: PrismaClient) => {
     try {
       const installationIdInt = parseInt(installation_id as string, 10);
       
-      const installationOctokit = await app.getInstallationOctokit(installationIdInt);
-      
-      // Obtener la información del usuario de GitHub
-      const { data: userData } = await installationOctokit.rest.users.getAuthenticated();
-
       const session = await prisma.userSession.create({
         data: {
           installationId: installationIdInt,
-          githubUser: userData,
+          githubUser: {},
           wordpressSite: wordpress_site,
           expiresAt: new Date(Date.now() + 3600000)
         }
