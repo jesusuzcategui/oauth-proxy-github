@@ -35,7 +35,6 @@ export default (prisma: PrismaClient) => {
     res.redirect(installationUrl);
   });
 
-  // GET /auth/github/callback - ✅ Con manejo correcto de tipos
   router.get('/github/callback', async (req: Request, res: Response) => {
     const { installation_id, state } = req.query;
     const wordpress_site = state as string;
@@ -49,24 +48,29 @@ export default (prisma: PrismaClient) => {
     try {
       const installationIdInt = parseInt(installation_id as string, 10);
 
-      // Obtener información de la instalación
-      const installationOctokit = await app.getInstallationOctokit(installationIdInt);
-      const { data: installation } = await installationOctokit.rest.apps.getInstallation();
+      // ✅ Cambiar esta línea - obtener instalación específica
+      const { data: installation } = await app.octokit.rest.apps.getInstallation({
+        installation_id: installationIdInt
+      });
 
       console.log('Installation data:', installation);
 
-      // ✅ Validar y serializar los datos del usuario/cuenta
+      // ✅ Validar que account existe
       if (!installation.account) {
         return res.status(400).send('No account information found in installation.');
       }
 
-      // Crear un objeto limpio compatible con Prisma Json
+      const account = installation.account;
+
+      // ✅ Crear objeto con propiedades que existen
       const githubUserData = JSON.parse(JSON.stringify(installation.account));
+
+      console.log('GitHub user data:', githubUserData);
 
       const session = await prisma.userSession.create({
         data: {
           installationId: installationIdInt,
-          githubUser: githubUserData, // ✅ Objeto serializado y limpio
+          githubUser: githubUserData,
           wordpressSite: wordpress_site,
           expiresAt: new Date(Date.now() + 3600000)
         }
