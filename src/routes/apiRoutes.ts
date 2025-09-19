@@ -15,16 +15,16 @@ export default (prisma: PrismaClient) => {
       }
 
       const response = await fetch(`https://api.github.com/${apiPath}`, {
-        headers: {
+        headers: { 
           Authorization: `Bearer ${githubToken}`,
           Accept: 'application/vnd.github.v3+json'
         }
       });
-
+      
       if (!response.ok) {
         return res.status(response.status).json(await response.json());
       }
-
+      
       const data = await response.json();
       res.json(data);
     } catch (error) {
@@ -61,49 +61,34 @@ export default (prisma: PrismaClient) => {
     }
     res.json(user);
   });
-
-  // En lugar de /user/installations, usar /user/memberships/orgs
-  router.get('/github/orgs', async (req: Request, res: Response) => {
+  
+  // GET /api/github/orgs - CORREGIDO: Manejo seguro de tipos
+  router.get('/github/orgs', (req: Request, res: Response) => {
     try {
-      const githubToken = req.user?.githubToken;
-      if (!githubToken) {
-        return res.status(401).send('Unauthorized: GitHub token not available.');
+      // Acceder directamente a la sesión para evitar problemas de tipos
+      const session = (req as any).user;
+      if (!session || !session.githubUser) {
+        return res.status(404).send('User not found in session.');
       }
-
-      // Primero obtener el usuario actual
-      const userResponse = await fetch('https://api.github.com/user', {
-        headers: {
-          Authorization: `Bearer ${githubToken}`,
-          Accept: 'application/vnd.github.v3+json'
-        }
-      });
-
-      const user = await userResponse.json();
-
-      // Intentar obtener organizaciones públicas del usuario
-      const orgsResponse = await fetch(`https://api.github.com/users/${user.login}/orgs`, {
-        headers: {
-          Authorization: `Bearer ${githubToken}`,
-          Accept: 'application/vnd.github.v3+json'
-        }
-      });
-
-      let accounts = [{
-        id: user.id,
-        login: user.login,
-        type: 'User',
-        avatar_url: user.avatar_url,
-        html_url: user.html_url
+      
+      const user = session.githubUser as any;
+      console.log('User data from session:', user);
+      
+      // Crear array con los datos del usuario, validando cada propiedad
+      const accounts = [{
+        id: user.id || 0,
+        login: user.login || 'unknown',
+        type: user.type || 'User',
+        avatar_url: user.avatar_url || '',
+        html_url: user.html_url || '',
+        name: user.name || user.login || 'Unknown User',
+        node_id: user.node_id || ''
       }];
-
-      if (orgsResponse.ok) {
-        const orgs = await orgsResponse.json();
-        accounts = accounts.concat(orgs);
-      }
-
+      
+      console.log('Returning accounts:', accounts);
       res.json(accounts);
     } catch (error) {
-      console.error('Error:', error);
+      console.error('Error fetching organizations:', error);
       res.status(500).send('Failed to fetch organizations.');
     }
   });
@@ -113,31 +98,31 @@ export default (prisma: PrismaClient) => {
     try {
       const { owner } = req.params;
       const githubToken = req.user?.githubToken;
-
+      
       if (!githubToken) {
         return res.status(401).send('Unauthorized: GitHub token not available.');
       }
 
       // Para GitHub Apps, obtenemos los repositorios de la instalación
       const response = await fetch(`https://api.github.com/installation/repositories`, {
-        headers: {
+        headers: { 
           Authorization: `Bearer ${githubToken}`,
           Accept: 'application/vnd.github.v3+json'
         }
       });
-
+      
       if (!response.ok) {
         const errorData = await response.json();
         return res.status(response.status).json(errorData);
       }
-
+      
       const data = await response.json();
-
+      
       // Filtrar repositorios por el owner solicitado
-      const filteredRepos = data.repositories.filter((repo: any) =>
+      const filteredRepos = data.repositories.filter((repo: any) => 
         repo.owner.login.toLowerCase() === owner.toLowerCase()
       );
-
+      
       res.json(filteredRepos);
     } catch (error) {
       console.error('Error fetching repositories:', error);
@@ -158,30 +143,30 @@ export default (prisma: PrismaClient) => {
       if (!githubToken) {
         return res.status(401).send('Unauthorized: GitHub token not available.');
       }
-
+      
       const response = await fetch(`https://api.github.com/repos/${owner}/${repo}/contents`, {
-        headers: {
+        headers: { 
           Authorization: `Bearer ${githubToken}`,
           Accept: 'application/vnd.github.v3+json'
         }
       });
-
+      
       if (!response.ok) {
         const errorData = await response.json();
         return res.status(response.status).json(errorData);
       }
-
+      
       const contents = await response.json();
-
+      
       // Detectar si es theme o plugin
-      const isTheme = contents.some((item: any) =>
+      const isTheme = contents.some((item: any) => 
         item.name === 'style.css' && item.type === 'file'
       );
-
-      const isPlugin = contents.some((item: any) =>
+      
+      const isPlugin = contents.some((item: any) => 
         item.name.endsWith('.php') && item.name === `${repo}.php`
       );
-
+      
       let type = 'other';
       if (isTheme) {
         type = 'theme';
@@ -196,7 +181,7 @@ export default (prisma: PrismaClient) => {
           type = 'plugin'; // Default a plugin
         }
       }
-
+      
       res.json({ type });
     } catch (error) {
       console.error('Error detecting repository type:', error);

@@ -40,12 +40,37 @@ const sessionValidation = async (req: Request, res: Response, next: NextFunction
 
     // Usar la propiedad 'installationId' que ya es un número en la sesión
     const installationOctokit = await app.getInstallationOctokit(session.installationId);
-    
+
     const { token } = await installationOctokit.auth({ type: 'installation' }) as any;
-    
+
+    // Hacer type assertion para githubUser
+    const githubUser = session.githubUser as any;
+
     req.user = {
       ...session,
-      githubToken: token
+      githubToken: token,
+      githubUser: {
+        id: githubUser.id,
+        login: githubUser.login,
+        type: githubUser.type || 'User',
+        avatar_url: githubUser.avatar_url,
+        html_url: githubUser.html_url,
+        name: githubUser.name || githubUser.login,
+        node_id: githubUser.node_id,
+        url: githubUser.url,
+        gists_url: githubUser.gists_url,
+        repos_url: githubUser.repos_url,
+        events_url: githubUser.events_url,
+        site_admin: githubUser.site_admin || false,
+        gravatar_id: githubUser.gravatar_id || '',
+        starred_url: githubUser.starred_url,
+        followers_url: githubUser.followers_url,
+        following_url: githubUser.following_url,
+        user_view_type: githubUser.user_view_type || 'public',
+        organizations_url: githubUser.organizations_url,
+        subscriptions_url: githubUser.subscriptions_url,
+        received_events_url: githubUser.received_events_url
+      }
     };
     next();
 
