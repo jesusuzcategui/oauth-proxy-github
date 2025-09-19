@@ -15,7 +15,10 @@ export default (prisma: PrismaClient) => {
       }
 
       const response = await fetch(`https://api.github.com/${apiPath}`, {
-        headers: { Authorization: `Bearer ${githubToken}` }
+        headers: { 
+          Authorization: `Bearer ${githubToken}`,
+          Accept: 'application/vnd.github.v3+json'
+        }
       });
       
       if (!response.ok) {
@@ -59,10 +62,88 @@ export default (prisma: PrismaClient) => {
     res.json(user);
   });
   
-  // The rest of the routes use the `githubApiProxy` which works correctly with the installation token
-  router.get('/github/orgs', (req: Request, res: Response) => githubApiProxy(req, res, 'user/orgs'));
-  router.get('/github/repos/:owner', (req: Request, res: Response) => githubApiProxy(req, res, `users/${req.params.owner}/repos`));
-  router.get('/github/branches/:owner/:repo', (req: Request, res: Response) => githubApiProxy(req, res, `repos/${req.params.owner}/${req.params.repo}/branches`));
+  // GET /api/github/orgs - CORREGIDO para GitHub Apps
+  router.get('/github/orgs', async (req: Request, res: Response) => {
+    try {
+      const githubToken = req.user?.githubToken;
+      if (!githubToken) {
+        return res.status(401).send('Unauthorized: GitHub token not available.');
+      }
+
+      // Para GitHub Apps, obtenemos las instalaciones accesibles
+      const installationsResponse = await fetch(`https://api.github.com/user/installations`, {
+        headers: { 
+          Authorization: `Bearer ${githubToken}`,
+          Accept: 'application/vnd.github.v3+json'
+        }
+      });
+      
+      if (!installationsResponse.ok) {
+        const errorData = await installationsResponse.json();
+        return res.status(installationsResponse.status).json(errorData);
+      }
+      
+      const installationsData = await installationsResponse.json();
+      
+      // Extraer las cuentas (usuarios/organizaciones) de las instalaciones
+      const accounts = installationsData.installations.map((installation: any) => ({
+        id: installation.account.id,
+        login: installation.account.login,
+        type: installation.account.type,
+        avatar_url: installation.account.avatar_url,
+        html_url: installation.account.html_url
+      }));
+      
+      res.json(accounts);
+    } catch (error) {
+      console.error('Error fetching installations:', error);
+      res.status(500).send('Failed to fetch installations.');
+    }
+  });
+
+  // GET /api/github/repos/:owner - CORREGIDO para GitHub Apps
+  router.get('/github/repos/:owner', async (req: Request, res: Response) => {
+    try {
+      const { owner } = req.params;
+      const githubToken = req.user?.githubToken;
+      
+      if (!githubToken) {
+        return res.status(401).send('Unauthorized: GitHub token not available.');
+      }
+
+      // Para GitHub Apps, obtenemos los repositorios de la instalación
+      const response = await fetch(`https://api.github.com/installation/repositories`, {
+        headers: { 
+          Authorization: `Bearer ${githubToken}`,
+          Accept: 'application/vnd.github.v3+json'
+        }
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        return res.status(response.status).json(errorData);
+      }
+      
+      const data = await response.json();
+      
+      // Filtrar repositorios por el owner solicitado
+      const filteredRepos = data.repositories.filter((repo: any) => 
+        repo.owner.login.toLowerCase() === owner.toLowerCase()
+      );
+      
+      res.json(filteredRepos);
+    } catch (error) {
+      console.error('Error fetching repositories:', error);
+      res.status(500).send('Failed to fetch repositories.');
+    }
+  });
+
+  // GET /api/github/branches/:owner/:repo
+  router.get('/github/branches/:owner/:repo', (req: Request, res: Response) => {
+    githubApiProxy(req, res, `repos/${req.params.owner}/${req.params.repo}/branches`);
+  });
+
+  // POST /api/github/detect-type/:owner/:repo
   router.post('/github/detect-type/:owner/:repo', async (req: Request, res: Response) => {
     try {
       const { owner, repo } = req.params;
@@ -70,16 +151,48 @@ export default (prisma: PrismaClient) => {
       if (!githubToken) {
         return res.status(401).send('Unauthorized: GitHub token not available.');
       }
+      
       const response = await fetch(`https://api.github.com/repos/${owner}/${repo}/contents`, {
-        headers: { Authorization: `Bearer ${githubToken}` }
+        headers: { 
+          Authorization: `Bearer ${githubToken}`,
+          Accept: 'application/vnd.github.v3+json'
+        }
       });
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        return res.status(response.status).json(errorData);
+      }
+      
       const contents = await response.json();
-      const isTheme = contents.some((item: any) => item.name.includes('style.css') && item.name !== 'readme.md');
-      const isPlugin = contents.some((item: any) => item.name.includes('.php') && item.name !== 'readme.md' && item.name === `${repo}.php`);
-      const type = isTheme ? 'theme' : (isPlugin ? 'plugin' : 'other');
+      
+      // Detectar si es theme o plugin
+      const isTheme = contents.some((item: any) => 
+        item.name === 'style.css' && item.type === 'file'
+      );
+      
+      const isPlugin = contents.some((item: any) => 
+        item.name.endsWith('.php') && item.name === `${repo}.php`
+      );
+      
+      let type = 'other';
+      if (isTheme) {
+        type = 'theme';
+      } else if (isPlugin) {
+        type = 'plugin';
+      } else {
+        // Fallback: detectar por nombre del repositorio
+        const repoName = repo.toLowerCase();
+        if (repoName.includes('theme') || repoName.includes('tema')) {
+          type = 'theme';
+        } else {
+          type = 'plugin'; // Default a plugin
+        }
+      }
+      
       res.json({ type });
     } catch (error) {
-      console.error(error);
+      console.error('Error detecting repository type:', error);
       res.status(500).send('Failed to detect repository type.');
     }
   });
