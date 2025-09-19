@@ -62,19 +62,47 @@ export default (prisma: PrismaClient) => {
     res.json(user);
   });
   
-  // GET /api/github/orgs - CORREGIDO: Manejo seguro de tipos
-  router.get('/github/orgs', (req: Request, res: Response) => {
+  // GET /api/github/orgs - Intentar obtener todas las instalaciones
+  router.get('/github/orgs', async (req: Request, res: Response) => {
     try {
-      // Acceder directamente a la sesión para evitar problemas de tipos
+      const githubToken = req.user?.githubToken;
+      if (!githubToken) {
+        return res.status(401).send('Unauthorized: GitHub token not available.');
+      }
+
+      // Intentar obtener instalaciones accesibles
+      try {
+        const installationsResponse = await fetch(`https://api.github.com/user/installations`, {
+          headers: { 
+            Authorization: `Bearer ${githubToken}`,
+            Accept: 'application/vnd.github.v3+json'
+          }
+        });
+        
+        if (installationsResponse.ok) {
+          const installationsData = await installationsResponse.json();
+          const accounts = installationsData.installations.map((installation: any) => ({
+            id: installation.account.id,
+            login: installation.account.login,
+            type: installation.account.type,
+            avatar_url: installation.account.avatar_url,
+            html_url: installation.account.html_url
+          }));
+          
+          console.log('Returning installations:', accounts);
+          return res.json(accounts);
+        }
+      } catch (installError) {
+        console.log('Installations endpoint failed, falling back to session data');
+      }
+
+      // Fallback: usar datos de la sesión actual
       const session = (req as any).user;
       if (!session || !session.githubUser) {
         return res.status(404).send('User not found in session.');
       }
       
       const user = session.githubUser as any;
-      console.log('User data from session:', user);
-      
-      // Crear array con los datos del usuario, validando cada propiedad
       const accounts = [{
         id: user.id || 0,
         login: user.login || 'unknown',
@@ -85,8 +113,9 @@ export default (prisma: PrismaClient) => {
         node_id: user.node_id || ''
       }];
       
-      console.log('Returning accounts:', accounts);
+      console.log('Returning fallback account:', accounts);
       res.json(accounts);
+      
     } catch (error) {
       console.error('Error fetching organizations:', error);
       res.status(500).send('Failed to fetch organizations.');
